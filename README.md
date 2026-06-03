@@ -23,13 +23,13 @@ Repositori ini dirancang sebagai **bahan eksplorasi dan pembelajaran bahasa Go**
 
 | Komponen        | Detail                                                |
 |-----------------|-------------------------------------------------------|
-| Language        | Go 1.24+ (toolchain: Go 1.25)                         |
+| Language        | Go 1.25.0                                             |
 | HTTP Server     | `net/http` stdlib                                     |
 | Router          | `http.ServeMux` method routing (Go 1.22+)             |
 | JSON            | `encoding/json` stdlib                                |
 | Logging         | `log/slog` structured logger (stdlib, Go 1.21+)       |
 | Database        | PostgreSQL 14+                                        |
-| DB Driver       | `github.com/jackc/pgx/v5` (pgxpool)                  |
+| DB Driver       | `github.com/jackc/pgx/v5` v5.10.0 (pgxpool)          |
 | Validation      | Custom — stdlib `strings` + `regexp`                 |
 
 ---
@@ -95,7 +95,7 @@ go-explore-api/
 
 ## Prasyarat
 
-- [Go 1.24+](https://go.dev/dl/)
+- [Go 1.25.0+](https://go.dev/dl/)
 - PostgreSQL 14+ berjalan di localhost
 
 ---
