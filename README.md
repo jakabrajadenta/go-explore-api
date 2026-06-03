@@ -1,32 +1,50 @@
 # go-explore-api
 
-Proyek pembelajaran untuk membangun **REST API** menggunakan **Go murni** (native stdlib) — tanpa framework seperti Echo, Gin, atau Fiber. Cocok untuk memahami cara kerja HTTP server, routing, middleware, dan JSON encoding dari dasar.
+Proyek pembelajaran untuk membangun **REST API** menggunakan **Go murni** (native stdlib + satu driver DB) — tanpa framework seperti Echo, Gin, atau Fiber. Mencakup arsitektur berlapis ala Spring Boot: handler → service → repository → database.
 
 ---
 
 ## Tujuan Repositori
 
-Repositori ini dirancang sebagai **bahan eksplorasi dan pembelajaran bahasa Go**, khususnya:
+Repositori ini dirancang sebagai **bahan eksplorasi dan pembelajaran bahasa Go**, mencakup:
 
-- Cara kerja `net/http` dan `http.ServeMux` terbaru (Go 1.22+)
-- Routing berbasis method dan path parameter tanpa library eksternal
-- Penulisan middleware yang bisa di-chain (Logger, CORS)
-- Structured logging dengan `log/slog` (Go 1.21+)
-- Pattern penulisan HTTP handler yang bersih dan idiomatic
+- Cara kerja `net/http` dan `http.ServeMux` terbaru (Go 1.22+) dengan method routing & path parameter
+- Arsitektur berlapis: **Handler → Service → Repository → Model/DTO**
+- Standarisasi response API dengan envelope konsisten (mirip Spring `ResponseBody` / `@RestControllerAdvice`)
+- Penulisan middleware yang bisa di-chain: Logger & CORS
+- Structured logging dengan `log/slog` (built-in Go 1.21+)
+- Koneksi PostgreSQL via `pgxpool` (connection pool)
+- Validasi input sederhana tanpa library eksternal
 - Pengelolaan modul dengan `go.mod`
 
 ---
 
 ## Tech Stack
 
-| Komponen        | Detail                                        |
-|-----------------|-----------------------------------------------|
-| Language        | Go 1.24                                       |
-| HTTP Server     | `net/http` (stdlib)                           |
-| Router          | `http.ServeMux` dengan method routing (Go 1.22+) |
-| JSON            | `encoding/json` (stdlib)                      |
-| Logging         | `log/slog` structured logger (stdlib, Go 1.21+) |
-| Dependency      | Tidak ada dependency eksternal                |
+| Komponen        | Detail                                                |
+|-----------------|-------------------------------------------------------|
+| Language        | Go 1.24+ (toolchain: Go 1.25)                         |
+| HTTP Server     | `net/http` stdlib                                     |
+| Router          | `http.ServeMux` method routing (Go 1.22+)             |
+| JSON            | `encoding/json` stdlib                                |
+| Logging         | `log/slog` structured logger (stdlib, Go 1.21+)       |
+| Database        | PostgreSQL 14+                                        |
+| DB Driver       | `github.com/jackc/pgx/v5` (pgxpool)                  |
+| Validation      | Custom — stdlib `strings` + `regexp`                 |
+
+---
+
+## Perbandingan Struktur: Spring Boot vs Go
+
+| Spring Boot                | Go (project ini)                   | Peran                              |
+|----------------------------|------------------------------------|------------------------------------|
+| `@RestController`          | `internal/handler/`                | Menerima HTTP request & kirim response |
+| `@Service`                 | `internal/service/`                | Business logic & orchestration     |
+| `@Repository` / JPA        | `internal/repository/`             | Akses data ke database             |
+| `@Entity`                  | `internal/model/`                  | Representasi row database          |
+| `RequestDTO` / `ResponseDTO` | `internal/dto/`                  | Kontrak request & response         |
+| `ResponseEntity` / `@ControllerAdvice` | `pkg/response/`        | Standarisasi bentuk response       |
+| `application.properties`   | `.env` + `config/`                 | Konfigurasi environment            |
 
 ---
 
@@ -34,205 +52,283 @@ Repositori ini dirancang sebagai **bahan eksplorasi dan pembelajaran bahasa Go**
 
 ```
 go-explore-api/
-├── main.go               # Entry point: konfigurasi server & middleware chain
-├── go.mod                # Go module definition
-├── .env.example          # Contoh environment variable
+├── main.go                          # Entry point: wiring & server startup
+├── go.mod / go.sum                  # Module & dependency lock
+├── .env.example                     # Template environment variable
 │
-├── handler/
-│   ├── routes.go         # Registrasi semua endpoint ke ServeMux
-│   ├── info.go           # GET /  — info API dan daftar endpoint
-│   ├── health.go         # GET /health — health check & uptime
-│   ├── echo.go           # GET+POST /echo — mirror request kembali ke caller
-│   └── response.go       # Helper writeJSON()
+├── config/
+│   └── database.go                  # DB config & pgxpool factory
 │
-└── middleware/
-    └── middleware.go     # Logger, CORS, dan Chain() helper
+├── internal/                        # Kode bisnis, tidak boleh diimport dari luar
+│   ├── handler/                     # = Controller: terima request, delegasi ke service
+│   │   ├── routes.go                # Registrasi semua route ke ServeMux
+│   │   ├── user_handler.go          # CRUD /api/v1/users
+│   │   ├── health_handler.go        # GET /health
+│   │   ├── info_handler.go          # GET /
+│   │   └── echo_handler.go          # GET+POST /echo (endpoint belajar)
+│   │
+│   ├── service/                     # Business logic
+│   │   └── user_service.go          # Interface + implementasi UserService
+│   │
+│   ├── repository/                  # Data access layer
+│   │   └── user_repository.go       # Interface + implementasi UserRepository (pgx)
+│   │
+│   ├── model/                       # = Entity: struct yang merepresentasikan tabel DB
+│   │   └── user.go
+│   │
+│   └── dto/                         # Data Transfer Objects: request & response
+│       └── user_dto.go              # CreateUserRequest, UpdateUserRequest, UserResponse
+│
+├── middleware/
+│   └── middleware.go                # Logger, CORS, Chain() helper
+│
+├── pkg/                             # Package reusable (bisa dipakai modul lain)
+│   └── response/
+│       └── response.go              # Standard response envelope (OK, Created, BadRequest, dst.)
+│
+└── sql/
+    ├── ddl.sql                      # Schema, table, index, trigger definition
+    └── dml.sql                      # Seed / default data
+```
+
+---
+
+## Prasyarat
+
+- [Go 1.24+](https://go.dev/dl/)
+- PostgreSQL 14+ berjalan di localhost
+
+---
+
+## Setup Database
+
+### 1. Buat database
+
+```sql
+CREATE DATABASE go_explore;
+```
+
+### 2. Jalankan DDL (buat schema, tabel, trigger)
+
+```bash
+psql -U postgres -d go_explore -f sql/ddl.sql
+```
+
+Atau buka `sql/ddl.sql` di DBeaver dan eksekusi.
+
+### 3. Jalankan DML (isi data default)
+
+```bash
+psql -U postgres -d go_explore -f sql/dml.sql
 ```
 
 ---
 
 ## Instalasi & Menjalankan
 
-### Prasyarat
-
-- [Go 1.24+](https://go.dev/dl/) terpasang di sistem
-
-### Clone & Run
-
 ```bash
 git clone https://github.com/jakabrajadenta/go-explore-api.git
 cd go-explore-api
 
-# Jalankan langsung (tanpa build)
+# Salin dan sesuaikan env
+cp .env.example .env
+# Edit .env: isi DB_PASSWORD
+
+# Download dependency
+go mod download
+
+# Jalankan langsung
 go run .
 
-# Atau build dulu, lalu jalankan binary
+# Atau build binary dulu
 go build -o bin/api .
 ./bin/api
 ```
 
-Server berjalan di `http://localhost:8080` secara default.
+Server berjalan di `http://localhost:8080`.
 
-### Konfigurasi Port
+---
 
-```bash
-# Via environment variable
-PORT=9000 go run .
+## Konfigurasi (`.env`)
 
-# Atau salin .env.example ke .env lalu edit
-cp .env.example .env
+| Variable      | Default          | Keterangan                  |
+|---------------|------------------|-----------------------------|
+| `PORT`        | `8080`           | Port HTTP server            |
+| `DB_HOST`     | `localhost`      | Host PostgreSQL             |
+| `DB_PORT`     | `5432`           | Port PostgreSQL             |
+| `DB_USER`     | `postgres`       | Username DB                 |
+| `DB_PASSWORD` | _(wajib diisi)_  | Password DB                 |
+| `DB_NAME`     | `go_explore`     | Nama database               |
+| `DB_SCHEMA`   | `user_management`| Search path / schema aktif  |
+| `DB_SSLMODE`  | `disable`        | SSL mode (`disable`/`require`) |
+
+---
+
+## Standard Response Format
+
+Semua endpoint mengembalikan envelope JSON yang konsisten:
+
+### Response tunggal
+```json
+{
+  "success": true,
+  "message": "User retrieved successfully",
+  "data": {
+    "id": 1,
+    "username": "john_doe",
+    "email": "john@example.com",
+    "full_name": "John Doe",
+    "phone": "081200000002",
+    "is_active": true,
+    "created_at": "2026-06-03T10:00:00Z",
+    "updated_at": "2026-06-03T10:00:00Z"
+  },
+  "meta": {
+    "timestamp": "2026-06-03T10:05:00Z",
+    "path": "/api/v1/users/1"
+  }
+}
+```
+
+### Response list (dengan pagination)
+```json
+{
+  "success": true,
+  "message": "Users retrieved successfully",
+  "data": [...],
+  "meta": {
+    "timestamp": "2026-06-03T10:05:00Z",
+    "path": "/api/v1/users",
+    "pagination": {
+      "page": 1,
+      "per_page": 10,
+      "total": 5,
+      "total_pages": 1
+    }
+  }
+}
+```
+
+### Response error validasi
+```json
+{
+  "success": false,
+  "message": "Validation failed",
+  "errors": {
+    "email": "email format is invalid",
+    "full_name": "full_name is required"
+  },
+  "meta": {
+    "timestamp": "2026-06-03T10:05:00Z",
+    "path": "/api/v1/users"
+  }
+}
 ```
 
 ---
 
 ## API Endpoints
 
-### `GET /`
-Menampilkan informasi API dan daftar endpoint yang tersedia.
+### Utility
 
-```bash
-curl http://localhost:8080/
-```
+| Method | Path               | Deskripsi                              |
+|--------|--------------------|----------------------------------------|
+| GET    | `/`                | Info API & daftar endpoint             |
+| GET    | `/health`          | Health check & uptime server           |
+| GET    | `/echo`            | Mirror query params & headers          |
+| POST   | `/echo`            | Mirror JSON body                       |
+| GET    | `/echo/{message}`  | Mirror path parameter                  |
 
-```json
-{
-  "name": "go-explore-api",
-  "version": "1.0.0",
-  "description": "A learning project for building REST APIs with native Go — no framework, just stdlib.",
-  "language": "Go 1.24",
-  "endpoints": [
-    { "method": "GET",  "path": "/",               "description": "API info and available endpoints" },
-    { "method": "GET",  "path": "/health",          "description": "Health check with uptime" },
-    { "method": "GET",  "path": "/echo",            "description": "Echo query params and request headers" },
-    { "method": "POST", "path": "/echo",            "description": "Echo JSON request body back to caller" },
-    { "method": "GET",  "path": "/echo/{message}",  "description": "Echo a path parameter as message" }
-  ]
-}
-```
+### User Management
+
+| Method | Path                    | Deskripsi                      | Status Sukses |
+|--------|-------------------------|--------------------------------|---------------|
+| GET    | `/api/v1/users`         | List semua user (paginasi)     | 200           |
+| GET    | `/api/v1/users/{id}`    | Detail user berdasarkan ID     | 200           |
+| POST   | `/api/v1/users`         | Buat user baru                 | 201           |
+| PUT    | `/api/v1/users/{id}`    | Update seluruh data user       | 200           |
+| DELETE | `/api/v1/users/{id}`    | Hapus user                     | 200           |
 
 ---
 
-### `GET /health`
-Health check endpoint. Mengembalikan status server dan berapa lama server sudah berjalan (uptime).
+## Contoh Request
 
+### List Users
 ```bash
-curl http://localhost:8080/health
+curl "http://localhost:8080/api/v1/users?page=1&per_page=5"
 ```
 
-```json
-{
-  "status": "ok",
-  "timestamp": "2026-06-03T10:00:00Z",
-  "uptime": "5m32s"
-}
-```
-
----
-
-### `GET /echo`
-Memantulkan kembali query parameter dan request header dari caller.
-
+### Create User
 ```bash
-curl "http://localhost:8080/echo?nama=jaka&kota=jakarta"
-```
-
-```json
-{
-  "method": "GET",
-  "path": "/echo",
-  "headers": {
-    "User-Agent": "curl/8.7.1",
-    "Accept": "*/*"
-  },
-  "query": {
-    "nama": "jaka",
-    "kota": "jakarta"
-  }
-}
-```
-
----
-
-### `POST /echo`
-Memantulkan kembali JSON body yang dikirim oleh caller.
-
-```bash
-curl -X POST http://localhost:8080/echo \
+curl -X POST http://localhost:8080/api/v1/users \
   -H "Content-Type: application/json" \
-  -d '{"pesan": "halo", "angka": 42}'
+  -d '{
+    "username": "rafi_a",
+    "email": "rafi@example.com",
+    "full_name": "Rafi Ahmad",
+    "phone": "081200000010"
+  }'
 ```
 
-```json
-{
-  "method": "POST",
-  "path": "/echo",
-  "headers": {
-    "Content-Type": "application/json",
-    "User-Agent": "curl/8.7.1"
-  },
-  "body": {
-    "pesan": "halo",
-    "angka": 42
-  }
-}
-```
-
----
-
-### `GET /echo/{message}`
-Memantulkan kembali pesan dari path parameter URL.
-
+### Update User
 ```bash
-curl http://localhost:8080/echo/halo-dunia
+curl -X PUT http://localhost:8080/api/v1/users/1 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "admin_v2",
+    "email": "admin@example.com",
+    "full_name": "Administrator V2",
+    "phone": "081200000001",
+    "is_active": true
+  }'
 ```
 
-```json
-{
-  "method": "GET",
-  "path": "/echo/halo-dunia",
-  "message": "halo-dunia"
-}
+### Delete User
+```bash
+curl -X DELETE http://localhost:8080/api/v1/users/5
 ```
 
 ---
 
-## Fitur
+## Validasi
 
-| Fitur                     | Keterangan                                                         |
-|---------------------------|--------------------------------------------------------------------|
-| Method-aware routing      | `GET /echo` dan `POST /echo` bisa ditangani handler berbeda        |
-| Path parameters           | `r.PathValue("message")` native Go 1.22                           |
-| Middleware chain          | Logger + CORS dikomposisi dengan `Chain()`                         |
-| Structured logging        | `log/slog` — output JSON-friendly, siap production                 |
-| CORS header               | Permissive CORS untuk kemudahan development & testing              |
-| Timeout konfigurasi       | `ReadTimeout`, `WriteTimeout`, `IdleTimeout` terset di server      |
-| Zero external dependency  | `go.mod` tanpa entry `require` — hanya stdlib                      |
+Field wajib yang divalidasi:
+
+| Field       | Create | Update | Aturan                        |
+|-------------|--------|--------|-------------------------------|
+| `username`  | ✓      | ✓      | Tidak boleh kosong, unik      |
+| `email`     | ✓      | ✓      | Tidak boleh kosong, format valid, unik |
+| `full_name` | ✓      | ✓      | Tidak boleh kosong            |
+| `phone`     | —      | —      | Opsional                      |
+| `is_active` | —      | opsional | Boolean, default `true` saat create |
 
 ---
 
 ## Konsep Go yang Dipelajari
 
 ```
-net/http       → HTTP server, handler, ServeMux, method routing, path params
-encoding/json  → Marshal/Unmarshal, Encoder, Decoder
-log/slog       → Structured logging dengan key-value attributes
+net/http       → HTTP server, ServeMux, method routing, path params (Go 1.22)
+encoding/json  → NewDecoder / NewEncoder
+log/slog       → Structured logging dengan attributes key-value
 os             → Membaca environment variable
-time           → Timeout, RFC3339, Duration formatting
+time           → Timeout, RFC3339, Duration
+errors         → errors.Is() untuk error sentinel
+regexp         → Validasi format email
+pgx/v5         → PostgreSQL driver, pgxpool, QueryRow, Query, Exec
 ```
 
 ---
 
 ## Pengembangan Lanjutan (Ide)
 
-Repositori ini bisa dikembangkan lebih jauh sebagai eksperimen:
-
+- [ ] Graceful shutdown dengan `os.Signal` + `context.WithCancel`
+- [ ] Unit test dengan `net/http/httptest` dan mock repository
 - [ ] Middleware autentikasi sederhana (API Key via header)
 - [ ] Rate limiter sederhana (in-memory per IP)
-- [ ] Endpoint `POST /validate` — validasi JSON schema secara manual
-- [ ] Graceful shutdown dengan `os.Signal` dan `context`
-- [ ] Unit test dengan `net/http/httptest`
-- [ ] Integrasi database (SQLite via `database/sql`)
+- [ ] Soft delete (`deleted_at TIMESTAMPTZ`)
+- [ ] Search & filter di endpoint list users
 - [ ] Dockerize dengan multi-stage build
+- [ ] Migration tool (`golang-migrate`)
 
 ---
 

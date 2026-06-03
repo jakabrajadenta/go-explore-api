@@ -6,18 +6,37 @@ import (
 	"os"
 	"time"
 
-	"github.com/jakabrajadenta/go-explore-api/handler"
+	"github.com/jakabrajadenta/go-explore-api/config"
+	"github.com/jakabrajadenta/go-explore-api/internal/handler"
+	"github.com/jakabrajadenta/go-explore-api/internal/repository"
+	"github.com/jakabrajadenta/go-explore-api/internal/service"
 	"github.com/jakabrajadenta/go-explore-api/middleware"
 )
 
 func main() {
+	// ── Database ──────────────────────────────────────────────
+	dbCfg := config.NewDBConfig()
+	pool, err := config.NewPool(dbCfg)
+	if err != nil {
+		slog.Error("database connection failed", "error", err)
+		os.Exit(1)
+	}
+	defer pool.Close()
+	slog.Info("database connected", "host", dbCfg.Host, "db", dbCfg.DBName, "schema", dbCfg.Schema)
+
+	// ── Dependency wiring ─────────────────────────────────────
+	userRepo := repository.NewUserRepository(pool)
+	userSvc := service.NewUserService(userRepo)
+
+	// ── Router ────────────────────────────────────────────────
+	mux := http.NewServeMux()
+	handler.RegisterRoutes(mux, userSvc)
+
+	// ── Server ────────────────────────────────────────────────
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
-
-	mux := http.NewServeMux()
-	handler.RegisterRoutes(mux)
 
 	srv := &http.Server{
 		Addr:         ":" + port,
