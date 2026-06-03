@@ -1,32 +1,148 @@
-# If you prefer the allow list template instead of the deny list, see community template:
-# https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
-#
-# Binaries for programs and plugins
+# ============================================================
+# Go Binaries & Build Artifacts
+# ============================================================
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
-
-# Test binary, built with `go test -c`
 *.test
-
-# Code coverage profiles and other test artifacts
 *.out
+/bin/
+/dist/
+/build/
+
+# ============================================================
+# Go Coverage & Profiling
+# ============================================================
 coverage.*
 *.coverprofile
 profile.cov
+*.prof
+*.pprof
+cpu.out
+mem.out
 
-# Dependency directories (remove the comment below to include it)
-# vendor/
-
-# Go workspace file
+# ============================================================
+# Go Module
+# ============================================================
+# vendor/ is excluded; commit go.sum but not vendor dir
+vendor/
+# go.work is for multi-module workspaces; exclude for single-module projects
 go.work
 go.work.sum
 
-# env file
+# ============================================================
+# Environment & Secrets
+# ============================================================
 .env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+secrets/
+config/local.*
 
-# Editor/IDE
-# .idea/
-# .vscode/
+# ============================================================
+# OS Generated
+# ============================================================
+
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# ============================================================
+# Editor & IDE
+# ============================================================
+
+# JetBrains (GoLand, IntelliJ)
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Vim / Neovim
+*.swp
+*.swo
+*.swn
+[._]*.s[a-v][a-z]
+[._]*.sw[a-p]
+Session.vim
+.netrwhist
+tags
+[._]*.un~
+
+# Emacs
+*~
+\#*\#
+.#*
+.emacs.desktop
+.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Zed
+.zed/
+
+# ============================================================
+# Development Tools
+# ============================================================
+
+# Air (live reload for Go)
+tmp/
+.air.toml
+
+# Delve (debugger)
+__debug_bin*
+debug.test
+
+# golangci-lint cache
+.golangci-lint-cache/
+
+# Task runner
+.task/
+
+# ============================================================
+# Docker
+# ============================================================
+# Local override compose files
+docker-compose.override.yml
+docker-compose.local.yml
+
+# ============================================================
+# Logs
+# ============================================================
+*.log
+logs/
