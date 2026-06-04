@@ -1,9 +1,10 @@
 package middleware
 
 import (
-	"log/slog"
 	"net/http"
 	"time"
+
+	"github.com/jakabrajadenta/go-explore-api/pkg/logger"
 )
 
 type Func func(http.Handler) http.Handler
@@ -16,20 +17,32 @@ func Chain(h http.Handler, middlewares ...Func) http.Handler {
 	return h
 }
 
-// Logger logs method, path, status code, and latency for every request.
+// Logger generates a trace ID per request, injects it into the context, exposes
+// it via the X-Trace-Id response header, and logs the request lifecycle.
 func Logger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
+		traceID := logger.Generate()
+		ctx := logger.WithTraceID(r.Context(), traceID)
+		r = r.WithContext(ctx)
+
 		rw := &responseRecorder{ResponseWriter: w, statusCode: http.StatusOK}
+		rw.Header().Set("X-Trace-Id", traceID)
+
+		start := time.Now()
+		log := logger.FromCtx(ctx)
+		log.Info("request received",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"remote", r.RemoteAddr,
+		)
 
 		next.ServeHTTP(rw, r)
 
-		slog.Info("request",
+		log.Info("request completed",
 			"method", r.Method,
 			"path", r.URL.Path,
 			"status", rw.statusCode,
 			"latency", time.Since(start).String(),
-			"remote", r.RemoteAddr,
 		)
 	})
 }

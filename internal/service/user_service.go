@@ -8,6 +8,7 @@ import (
 	"github.com/jakabrajadenta/go-explore-api/internal/dto"
 	"github.com/jakabrajadenta/go-explore-api/internal/model"
 	"github.com/jakabrajadenta/go-explore-api/internal/repository"
+	"github.com/jakabrajadenta/go-explore-api/pkg/logger"
 )
 
 var (
@@ -33,6 +34,9 @@ func NewUserService(repo repository.UserRepository) UserService {
 }
 
 func (s *userService) GetAll(ctx context.Context, page, perPage int) ([]dto.UserResponse, int, error) {
+	log := logger.FromCtx(ctx)
+	log.Info("service.GetAll", "page", page, "per_page", perPage)
+
 	if page < 1 {
 		page = 1
 	}
@@ -42,6 +46,7 @@ func (s *userService) GetAll(ctx context.Context, page, perPage int) ([]dto.User
 
 	users, total, err := s.repo.FindAll(ctx, page, perPage)
 	if err != nil {
+		log.Error("service.GetAll failed", "error", err)
 		return nil, 0, err
 	}
 
@@ -53,11 +58,15 @@ func (s *userService) GetAll(ctx context.Context, page, perPage int) ([]dto.User
 }
 
 func (s *userService) GetByID(ctx context.Context, id int64) (*dto.UserResponse, error) {
+	log := logger.FromCtx(ctx)
+	log.Info("service.GetByID", "user_id", id)
+
 	user, err := s.repo.FindByID(ctx, id)
 	if errors.Is(err, repository.ErrNotFound) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
+		log.Error("service.GetByID failed", "user_id", id, "error", err)
 		return nil, err
 	}
 	resp := toResponse(*user)
@@ -65,6 +74,9 @@ func (s *userService) GetByID(ctx context.Context, id int64) (*dto.UserResponse,
 }
 
 func (s *userService) Create(ctx context.Context, req dto.CreateUserRequest) (*dto.UserResponse, error) {
+	log := logger.FromCtx(ctx)
+	log.Info("service.Create", "username", req.Username, "email", req.Email)
+
 	if _, err := s.repo.FindByUsername(ctx, req.Username); err == nil {
 		return nil, ErrUsernameConflict
 	}
@@ -79,6 +91,7 @@ func (s *userService) Create(ctx context.Context, req dto.CreateUserRequest) (*d
 		Phone:    req.Phone,
 	})
 	if err != nil {
+		log.Error("service.Create failed", "username", req.Username, "error", err)
 		return nil, err
 	}
 	resp := toResponse(*user)
@@ -86,11 +99,15 @@ func (s *userService) Create(ctx context.Context, req dto.CreateUserRequest) (*d
 }
 
 func (s *userService) Update(ctx context.Context, id int64, req dto.UpdateUserRequest) (*dto.UserResponse, error) {
+	log := logger.FromCtx(ctx)
+	log.Info("service.Update", "user_id", id, "username", req.Username)
+
 	existing, err := s.repo.FindByID(ctx, id)
 	if errors.Is(err, repository.ErrNotFound) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
+		log.Error("service.Update failed", "user_id", id, "error", err)
 		return nil, err
 	}
 
@@ -115,6 +132,7 @@ func (s *userService) Update(ctx context.Context, id int64, req dto.UpdateUserRe
 
 	updated, err := s.repo.Update(ctx, *existing)
 	if err != nil {
+		log.Error("service.Update failed", "user_id", id, "error", err)
 		return nil, err
 	}
 	resp := toResponse(*updated)
@@ -122,9 +140,15 @@ func (s *userService) Update(ctx context.Context, id int64, req dto.UpdateUserRe
 }
 
 func (s *userService) Delete(ctx context.Context, id int64) error {
+	log := logger.FromCtx(ctx)
+	log.Info("service.Delete", "user_id", id)
+
 	err := s.repo.Delete(ctx, id)
 	if errors.Is(err, repository.ErrNotFound) {
 		return ErrNotFound
+	}
+	if err != nil {
+		log.Error("service.Delete failed", "user_id", id, "error", err)
 	}
 	return err
 }

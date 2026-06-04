@@ -11,9 +11,13 @@ import (
 	"github.com/jakabrajadenta/go-explore-api/internal/repository"
 	"github.com/jakabrajadenta/go-explore-api/internal/service"
 	"github.com/jakabrajadenta/go-explore-api/middleware"
+	"github.com/jakabrajadenta/go-explore-api/pkg/logger"
 )
 
 func main() {
+	// ── Logging ───────────────────────────────────────────────
+	logger.Init(os.Getenv("LOG_FORMAT") == "json")
+
 	// ── Database ──────────────────────────────────────────────
 	dbCfg := config.NewDBConfig()
 	pool, err := config.NewPool(dbCfg)

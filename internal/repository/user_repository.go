@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/jakabrajadenta/go-explore-api/internal/model"
+	"github.com/jakabrajadenta/go-explore-api/pkg/logger"
 )
 
 var ErrNotFound = errors.New("record not found")
@@ -31,6 +32,8 @@ func NewUserRepository(db *pgxpool.Pool) UserRepository {
 }
 
 func (r *userRepository) FindAll(ctx context.Context, page, perPage int) ([]model.User, int, error) {
+	logger.FromCtx(ctx).Debug("repo.FindAll", "page", page, "per_page", perPage)
+
 	var total int
 	if err := r.db.QueryRow(ctx, `SELECT COUNT(*) FROM users`).Scan(&total); err != nil {
 		return nil, 0, err
@@ -60,24 +63,29 @@ func (r *userRepository) FindAll(ctx context.Context, page, perPage int) ([]mode
 }
 
 func (r *userRepository) FindByID(ctx context.Context, id int64) (*model.User, error) {
+	logger.FromCtx(ctx).Debug("repo.FindByID", "user_id", id)
 	return r.scanOne(ctx,
 		`SELECT id, username, email, full_name, phone, is_active, created_at, updated_at
 		 FROM users WHERE id = $1`, id)
 }
 
 func (r *userRepository) FindByUsername(ctx context.Context, username string) (*model.User, error) {
+	logger.FromCtx(ctx).Debug("repo.FindByUsername", "username", username)
 	return r.scanOne(ctx,
 		`SELECT id, username, email, full_name, phone, is_active, created_at, updated_at
 		 FROM users WHERE username = $1`, username)
 }
 
 func (r *userRepository) FindByEmail(ctx context.Context, email string) (*model.User, error) {
+	logger.FromCtx(ctx).Debug("repo.FindByEmail", "email", email)
 	return r.scanOne(ctx,
 		`SELECT id, username, email, full_name, phone, is_active, created_at, updated_at
 		 FROM users WHERE email = $1`, email)
 }
 
 func (r *userRepository) Create(ctx context.Context, user model.User) (*model.User, error) {
+	logger.FromCtx(ctx).Debug("repo.Create", "username", user.Username)
+
 	var u model.User
 	err := r.db.QueryRow(ctx,
 		`INSERT INTO users (username, email, full_name, phone, is_active)
@@ -90,6 +98,8 @@ func (r *userRepository) Create(ctx context.Context, user model.User) (*model.Us
 }
 
 func (r *userRepository) Update(ctx context.Context, user model.User) (*model.User, error) {
+	logger.FromCtx(ctx).Debug("repo.Update", "user_id", user.ID)
+
 	var u model.User
 	err := r.db.QueryRow(ctx,
 		`UPDATE users
@@ -106,6 +116,8 @@ func (r *userRepository) Update(ctx context.Context, user model.User) (*model.Us
 }
 
 func (r *userRepository) Delete(ctx context.Context, id int64) error {
+	logger.FromCtx(ctx).Debug("repo.Delete", "user_id", id)
+
 	result, err := r.db.Exec(ctx, `DELETE FROM users WHERE id = $1`, id)
 	if err != nil {
 		return err

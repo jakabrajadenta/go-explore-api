@@ -12,7 +12,8 @@ Repositori ini dirancang sebagai **bahan eksplorasi dan pembelajaran bahasa Go**
 - Arsitektur berlapis: **Handler → Service → Repository → Model/DTO**
 - Standarisasi response API dengan envelope konsisten (mirip Spring `ResponseBody` / `@RestControllerAdvice`)
 - Penulisan middleware yang bisa di-chain: Logger & CORS
-- Structured logging dengan `log/slog` (built-in Go 1.21+)
+- Structured logging dengan `log/slog` (built-in Go 1.21+) + **Trace ID** untuk pelacakan request end-to-end
+- Propagasi konteks (`context.Context`) dari HTTP request hingga query database
 - Koneksi PostgreSQL via `pgxpool` (connection pool)
 - Validasi input sederhana tanpa library eksternal
 - Pengelolaan modul dengan `go.mod`
@@ -27,7 +28,7 @@ Repositori ini dirancang sebagai **bahan eksplorasi dan pembelajaran bahasa Go**
 | HTTP Server     | `net/http` stdlib                                     |
 | Router          | `http.ServeMux` method routing (Go 1.22+)             |
 | JSON            | `encoding/json` stdlib                                |
-| Logging         | `log/slog` structured logger (stdlib, Go 1.21+)       |
+| Logging         | `log/slog` structured logger + trace ID per request   |
 | Database        | PostgreSQL 14+                                        |
 | DB Driver       | `github.com/jackc/pgx/v5` v5.10.0 (pgxpool)          |
 | Validation      | Custom — stdlib `strings` + `regexp`                 |
@@ -80,9 +81,11 @@ go-explore-api/
 │       └── user_dto.go              # CreateUserRequest, UpdateUserRequest, UserResponse
 │
 ├── middleware/
-│   └── middleware.go                # Logger, CORS, Chain() helper
+│   └── middleware.go                # Logger (inject trace ID), CORS, Chain() helper
 │
 ├── pkg/                             # Package reusable (bisa dipakai modul lain)
+│   ├── logger/
+│   │   └── logger.go                # Trace ID: generate, simpan/baca context, bungkus slog
 │   └── response/
 │       └── response.go              # Standard response envelope (OK, Created, BadRequest, dst.)
 │
@@ -151,16 +154,18 @@ Server berjalan di `http://localhost:8080`.
 
 ## Konfigurasi (`.env`)
 
-| Variable      | Default          | Keterangan                  |
-|---------------|------------------|-----------------------------|
-| `PORT`        | `8080`           | Port HTTP server            |
-| `DB_HOST`     | `localhost`      | Host PostgreSQL             |
-| `DB_PORT`     | `5432`           | Port PostgreSQL             |
-| `DB_USER`     | `postgres`       | Username DB                 |
-| `DB_PASSWORD` | _(wajib diisi)_  | Password DB                 |
-| `DB_NAME`     | `go_explore`     | Nama database               |
-| `DB_SCHEMA`   | `user_management`| Search path / schema aktif  |
-| `DB_SSLMODE`  | `disable`        | SSL mode (`disable`/`require`) |
+| Variable      | Default          | Keterangan                                          |
+|---------------|------------------|-----------------------------------------------------|
+| `PORT`        | `8080`           | Port HTTP server                                    |
+| `DB_HOST`     | `localhost`      | Host PostgreSQL                                     |
+| `DB_PORT`     | `5432`           | Port PostgreSQL                                     |
+| `DB_USER`     | `postgres`       | Username DB                                         |
+| `DB_PASSWORD` | _(wajib diisi)_  | Password DB                                         |
+| `DB_NAME`     | `go_explore`     | Nama database                                       |
+| `DB_SCHEMA`   | `user_management`| Search path / schema aktif                          |
+| `DB_SSLMODE`  | `disable`        | SSL mode (`disable`/`require`)                      |
+| `LOG_FORMAT`  | _(text)_         | Set `json` untuk output JSON (cocok untuk produksi) |
+| `LOG_LEVEL`   | `info`           | Set `debug` untuk melihat log query DB              |
 
 ---
 
@@ -184,6 +189,7 @@ Semua endpoint mengembalikan envelope JSON yang konsisten:
     "updated_at": "2026-06-03T10:00:00Z"
   },
   "meta": {
+    "trace_id": "a3f2b1c4d5e6f7a8",
     "timestamp": "2026-06-03T10:05:00Z",
     "path": "/api/v1/users/1"
   }
@@ -197,6 +203,7 @@ Semua endpoint mengembalikan envelope JSON yang konsisten:
   "message": "Users retrieved successfully",
   "data": [...],
   "meta": {
+    "trace_id": "a3f2b1c4d5e6f7a8",
     "timestamp": "2026-06-03T10:05:00Z",
     "path": "/api/v1/users",
     "pagination": {
@@ -219,11 +226,70 @@ Semua endpoint mengembalikan envelope JSON yang konsisten:
     "full_name": "full_name is required"
   },
   "meta": {
+    "trace_id": "a3f2b1c4d5e6f7a8",
     "timestamp": "2026-06-03T10:05:00Z",
     "path": "/api/v1/users"
   }
 }
 ```
+
+---
+
+## Logging & Trace ID
+
+Setiap HTTP request mendapat **trace ID** unik — string hex 16 karakter yang mengalir dari middleware hingga database query, sehingga seluruh proses satu request bisa dibaca end-to-end di log.
+
+### Alur trace ID
+
+```
+[Middleware] request received   → generate trace ID, simpan ke context
+[Service]    service.GetByID    → baca trace ID dari context, log operasi
+[Repository] repo.FindByID      → baca trace ID dari context, log query (debug)
+[Middleware] request completed  → log status & latency
+```
+
+### Contoh output log (format teks, development)
+
+```
+time=2026-06-04T10:00:00Z level=INFO  trace_id=a3f2b1c4d5e6f7a8 msg="request received"   method=GET path=/api/v1/users/1 remote=127.0.0.1:54321
+time=2026-06-04T10:00:00Z level=INFO  trace_id=a3f2b1c4d5e6f7a8 msg="service.GetByID"    user_id=1
+time=2026-06-04T10:00:00Z level=DEBUG trace_id=a3f2b1c4d5e6f7a8 msg="repo.FindByID"      user_id=1
+time=2026-06-04T10:00:00Z level=INFO  trace_id=a3f2b1c4d5e6f7a8 msg="request completed"  method=GET path=/api/v1/users/1 status=200 latency=3ms
+```
+
+Untuk menelusuri satu request, filter berdasarkan `trace_id`:
+
+```bash
+grep "a3f2b1c4d5e6f7a8" app.log
+```
+
+### Trace ID juga tersedia di:
+
+- **Response header** `X-Trace-Id` — client bisa membacanya untuk keperluan laporan bug
+- **Response body** `meta.trace_id` — tercantum di setiap JSON response
+
+```bash
+# Lihat trace ID dari header response
+curl -I http://localhost:8080/api/v1/users/1
+# X-Trace-Id: a3f2b1c4d5e6f7a8
+```
+
+### Konfigurasi log
+
+| Mode | Perintah | Kapan digunakan |
+|------|----------|-----------------|
+| Text (default) | `go run .` | Development — mudah dibaca manusia |
+| JSON | `LOG_FORMAT=json go run .` | Produksi — mudah di-parse log aggregator |
+| Debug | `LOG_LEVEL=debug go run .` | Debugging — tampilkan juga log query DB |
+
+### Log levels per layer
+
+| Layer | Level | Contoh |
+|-------|-------|--------|
+| Middleware | `INFO` | `request received`, `request completed` |
+| Service | `INFO` | `service.Create`, `service.Delete` |
+| Service (error) | `ERROR` | `service.Create failed error=...` |
+| Repository | `DEBUG` | `repo.FindByID`, `repo.Update` |
 
 ---
 
@@ -307,20 +373,24 @@ Field wajib yang divalidasi:
 ## Konsep Go yang Dipelajari
 
 ```
-net/http       → HTTP server, ServeMux, method routing, path params (Go 1.22)
-encoding/json  → NewDecoder / NewEncoder
-log/slog       → Structured logging dengan attributes key-value
-os             → Membaca environment variable
-time           → Timeout, RFC3339, Duration
-errors         → errors.Is() untuk error sentinel
-regexp         → Validasi format email
-pgx/v5         → PostgreSQL driver, pgxpool, QueryRow, Query, Exec
+net/http         → HTTP server, ServeMux, method routing, path params (Go 1.22)
+encoding/json    → NewDecoder / NewEncoder
+log/slog         → Structured logging dengan attributes key-value, JSON/text handler
+context          → Propagasi nilai (trace ID) dari HTTP layer hingga database query
+crypto/rand      → Generate trace ID yang aman secara kriptografi
+encoding/hex     → Encode bytes menjadi string hex yang readable
+os               → Membaca environment variable
+time             → Timeout, RFC3339, Duration
+errors           → errors.Is() untuk error sentinel
+regexp           → Validasi format email
+pgx/v5           → PostgreSQL driver, pgxpool, QueryRow, Query, Exec
 ```
 
 ---
 
 ## Pengembangan Lanjutan (Ide)
 
+- [x] Trace ID logging end-to-end per request (`pkg/logger`)
 - [ ] Graceful shutdown dengan `os.Signal` + `context.WithCancel`
 - [ ] Unit test dengan `net/http/httptest` dan mock repository
 - [ ] Middleware autentikasi sederhana (API Key via header)

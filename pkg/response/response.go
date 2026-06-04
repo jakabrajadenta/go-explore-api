@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"time"
+
+	"github.com/jakabrajadenta/go-explore-api/pkg/logger"
 )
 
 // Response is the standard envelope for all API responses.
@@ -25,11 +27,13 @@ type ListResponse struct {
 }
 
 type Meta struct {
+	TraceID   string `json:"trace_id,omitempty"`
 	Timestamp string `json:"timestamp"`
 	Path      string `json:"path"`
 }
 
 type ListMeta struct {
+	TraceID    string     `json:"trace_id,omitempty"`
 	Timestamp  string     `json:"timestamp"`
 	Path       string     `json:"path"`
 	Pagination Pagination `json:"pagination"`
@@ -69,6 +73,7 @@ func OKList(w http.ResponseWriter, r *http.Request, message string, data any, pa
 		Message: message,
 		Data:    data,
 		Meta: ListMeta{
+			TraceID:   logger.TraceIDFrom(r.Context()),
 			Timestamp: now(),
 			Path:      r.URL.Path,
 			Pagination: Pagination{
@@ -110,7 +115,11 @@ func InternalError(w http.ResponseWriter, r *http.Request) {
 // ── helpers ──────────────────────────────────────────────────
 
 func newMeta(r *http.Request) Meta {
-	return Meta{Timestamp: now(), Path: r.URL.Path}
+	return Meta{
+		TraceID:   logger.TraceIDFrom(r.Context()),
+		Timestamp: now(),
+		Path:      r.URL.Path,
+	}
 }
 
 func now() string {
