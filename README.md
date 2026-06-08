@@ -1,4 +1,4 @@
-# go-explore-api
+# Go Explore API
 
 Proyek pembelajaran untuk membangun **REST API** menggunakan **Go murni** (native stdlib + satu driver DB) — tanpa framework seperti Echo, Gin, atau Fiber. Mencakup arsitektur berlapis ala Spring Boot: handler → service → repository → database.
 
